@@ -11,24 +11,38 @@ class KitchenController extends Controller
 {
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'date' => ['required', 'date'],
-            'meal_type' => ['required', 'in:breakfast,lunch,dinner'],
-            'submitted_by' => ['required', 'string'],
-            'expected_guests' => ['required', 'integer'],
-            'actual_guests' => ['required', 'integer'],
-            'temperature_check_passed' => ['required', 'boolean'],
-            'dishes_ran_out' => ['nullable', 'string'],
-            'dishes_leftover' => ['nullable', 'string'],
-            'portion_observation' => ['nullable', 'string'],
-            'biggest_waste_dish' => ['nullable', 'string'],
-            'staff_meals_count' => ['nullable', 'integer'],
-            'staff_meals_qty' => ['nullable', 'numeric'],
-            'quality_issues' => ['nullable', 'string'],
-            'went_well' => ['nullable', 'string'],
-            'change_tomorrow' => ['nullable', 'string'],
-            'dish_waste_rows' => ['required', 'array', 'min:1'],
-        ]);
+        $validated = $request->validate(
+            [
+                'date' => ['required', 'date'],
+                'meal_type' => ['required', 'in:breakfast,lunch,dinner'],
+                'submitted_by' => ['required', 'string'],
+                'expected_guests' => ['required', 'integer'],
+                'actual_guests' => ['required', 'integer'],
+                'temperature_check_passed' => ['required', 'boolean'],
+                'dishes_ran_out' => ['nullable', 'string'],
+                'dishes_leftover' => ['nullable', 'string'],
+                'portion_observation' => ['nullable', 'string'],
+                'biggest_waste_dish' => ['nullable', 'string'],
+                'staff_meals_count' => ['nullable', 'integer'],
+                'staff_meals_qty' => ['nullable', 'numeric'],
+                'quality_issues' => ['nullable', 'string'],
+                'went_well' => ['nullable', 'string'],
+                'change_tomorrow' => ['nullable', 'string'],
+                'dish_waste_rows' => ['required', 'array', 'min:1'],
+                'dish_waste_rows.*.dish_name' => ['required', 'string'],
+                'dish_waste_rows.*.quantity_prepped_kg' => ['required', 'numeric', 'min:0'],
+                'dish_waste_rows.*.quantity_line_leftover_kg' => ['required', 'numeric', 'min:0'],
+                'dish_waste_rows.*.quantity_plate_waste_kg' => ['required', 'numeric', 'min:0'],
+                'dish_waste_rows.*.waste_reason' => ['required', 'string'],
+            ],
+            [
+                'dish_waste_rows.*.dish_name.required' => 'Dish name field is required.',
+                'dish_waste_rows.*.quantity_prepped_kg.required' => 'Prepped quantity field is required.',
+                'dish_waste_rows.*.quantity_line_leftover_kg.required' => 'Line leftover quantity field is required.',
+                'dish_waste_rows.*.quantity_plate_waste_kg.required' => 'Plate waste quantity field is required.',
+                'dish_waste_rows.*.waste_reason.required' => 'Waste reason field is required.',
+            ]
+        );
 
         $submission = KitchenSubmission::create($validated);
 
