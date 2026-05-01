@@ -3,6 +3,14 @@ import axios from 'axios';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar } from 'recharts';
 
 const api = axios.create({ baseURL: '/api' });
+const initialStoreForm = {
+    date: '', vendor_name: '', item_name: '', item_category: 'Vegetables', quantity: '', unit: 'kg', cost_per_unit: '', market_rate: '', notes: '', issued_to_kitchen_qty: '',
+};
+const initialKitchenForm = (submittedBy = '') => ({
+    date: '', meal_type: 'breakfast', submitted_by: submittedBy, expected_guests: '', temperature_check_passed: true, dishes_ran_out: '', dishes_leftover: '',
+    portion_observation: 'Reasonable', actual_guests: '', biggest_waste_dish: '', staff_meals_count: '', staff_meals_qty: '', quality_issues: '', went_well: '', change_tomorrow: '',
+});
+const initialDishRows = [{ dish_name: '', quantity_prepped_kg: '', quantity_line_leftover_kg: '', quantity_plate_waste_kg: '', waste_reason: 'Over-prep' }];
 
 export default function Dashboard() {
     const [token] = useState(localStorage.getItem('ashapuri_token') || '');
@@ -25,28 +33,51 @@ export default function Dashboard() {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [lastUpdated, setLastUpdated] = useState('');
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+    const [toasts, setToasts] = useState([]);
     const [kitchenLogs, setKitchenLogs] = useState([]);
-    const [storeForm, setStoreForm] = useState({
-        date: '', vendor_name: '', item_name: '', item_category: 'Vegetables', quantity: '', unit: 'kg', cost_per_unit: '', market_rate: '', notes: '', issued_to_kitchen_qty: '',
-    });
-    const [kitchenForm, setKitchenForm] = useState({
-        date: '', meal_type: 'breakfast', submitted_by: user?.name || '', expected_guests: '', temperature_check_passed: true, dishes_ran_out: '', dishes_leftover: '',
-        portion_observation: 'Reasonable', actual_guests: '', biggest_waste_dish: '', staff_meals_count: '', staff_meals_qty: '', quality_issues: '', went_well: '', change_tomorrow: '',
-    });
-    const [dishRows, setDishRows] = useState([{ dish_name: '', quantity_prepped_kg: '', quantity_line_leftover_kg: '', quantity_plate_waste_kg: '', waste_reason: 'Over-prep' }]);
+    const [storeErrors, setStoreErrors] = useState({});
+    const [isStoreSubmitting, setIsStoreSubmitting] = useState(false);
+    const [storeForm, setStoreForm] = useState(initialStoreForm);
+    const [kitchenForm, setKitchenForm] = useState(initialKitchenForm(user?.name || ''));
+    const [dishRows, setDishRows] = useState(initialDishRows);
     const [kitchenErrors, setKitchenErrors] = useState({});
     const [isKitchenSubmitting, setIsKitchenSubmitting] = useState(false);
-    const [activeDepartment] = useState('Kitchen');
+    const [isKitchenMenuOpen, setIsKitchenMenuOpen] = useState(false);
+    const [isStoreMenuOpen, setIsStoreMenuOpen] = useState(false);
+    const [editingStoreId, setEditingStoreId] = useState(null);
+    const [editingKitchenId, setEditingKitchenId] = useState(null);
+    const [storeListRows, setStoreListRows] = useState([]);
+    const [storeListMeta, setStoreListMeta] = useState({ page: 1, lastPage: 1, total: 0 });
+    const [storeSearch, setStoreSearch] = useState('');
+    const [storeSortBy, setStoreSortBy] = useState('date');
+    const [storeSortDir, setStoreSortDir] = useState('desc');
+    const [isStoreListLoading, setIsStoreListLoading] = useState(false);
+    const [kitchenListRows, setKitchenListRows] = useState([]);
+    const [kitchenListMeta, setKitchenListMeta] = useState({ page: 1, lastPage: 1, total: 0 });
+    const [kitchenSearch, setKitchenSearch] = useState('');
+    const [kitchenSortBy, setKitchenSortBy] = useState('date');
+    const [kitchenSortDir, setKitchenSortDir] = useState('desc');
+    const [isKitchenListLoading, setIsKitchenListLoading] = useState(false);
+    const [deletingStoreId, setDeletingStoreId] = useState(null);
+    const [deletingKitchenId, setDeletingKitchenId] = useState(null);
 
     const canAsk = useMemo(() => token && question.trim().length > 0, [token, question]);
     const canStore = user?.role === 'Store' || user?.role === 'Admin/GM';
     const canKitchen = user?.role === 'Kitchen' || user?.role === 'Admin/GM';
+    const showPeriodFilters = ['dashboard', 'report-daily', 'report-vendor', 'report-waste'].includes(view);
 
     useEffect(() => {
         if (!token || !user) window.location.href = '/';
     }, [token, user]);
 
     const headers = { Authorization: `Bearer ${token}` };
+    const showToast = (message, type = 'success') => {
+        const id = `${Date.now()}-${Math.random()}`;
+        setToasts((prev) => [...prev, { id, message, type }]);
+        window.setTimeout(() => {
+            setToasts((prev) => prev.filter((toast) => toast.id !== id));
+        }, 3500);
+    };
     const refresh = async () => {
         setIsRefreshing(true);
         setStatus('');
@@ -72,9 +103,55 @@ export default function Dashboard() {
             setIsRefreshing(false);
         }
     };
+    const fetchStoreList = async (page = storeListMeta.page) => {
+        setIsStoreListLoading(true);
+        try {
+            const res = await api.get('/store/purchases', {
+                headers,
+                params: { page, per_page: 10, q: storeSearch, sort_by: storeSortBy, sort_dir: storeSortDir },
+            });
+            setStoreListRows(res.data?.data || []);
+            setStoreListMeta({
+                page: res.data?.current_page || 1,
+                lastPage: res.data?.last_page || 1,
+                total: res.data?.total || 0,
+            });
+        } catch {
+            showToast('Unable to load Store list.', 'error');
+        } finally {
+            setIsStoreListLoading(false);
+        }
+    };
+    const fetchKitchenList = async (page = kitchenListMeta.page) => {
+        setIsKitchenListLoading(true);
+        try {
+            const res = await api.get('/kitchen/submissions', {
+                headers,
+                params: { page, per_page: 10, q: kitchenSearch, sort_by: kitchenSortBy, sort_dir: kitchenSortDir },
+            });
+            setKitchenListRows(res.data?.data || []);
+            setKitchenListMeta({
+                page: res.data?.current_page || 1,
+                lastPage: res.data?.last_page || 1,
+                total: res.data?.total || 0,
+            });
+        } catch {
+            showToast('Unable to load Kitchen list.', 'error');
+        } finally {
+            setIsKitchenListLoading(false);
+        }
+    };
 
     useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [token]);
     useEffect(() => { if (token) refresh(); /* eslint-disable-next-line */ }, [period]);
+    useEffect(() => {
+        if (token && canStore && view === 'store-list') fetchStoreList(1);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [view, token, canStore, storeSearch, storeSortBy, storeSortDir]);
+    useEffect(() => {
+        if (token && canKitchen && view === 'kitchen-list') fetchKitchenList(1);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [view, token, canKitchen, kitchenSearch, kitchenSortBy, kitchenSortDir]);
     useEffect(() => {
         const onResize = () => {
             if (window.innerWidth >= 1024) {
@@ -113,12 +190,85 @@ export default function Dashboard() {
             setIsMobileSidebarOpen(false);
         }
     };
+    const startEditStore = (row) => {
+        setEditingStoreId(row.id);
+        setStoreErrors({});
+        setStoreForm({
+            date: row.date || '',
+            vendor_name: row.vendor_name || '',
+            item_name: row.item_name || '',
+            item_category: row.item_category || 'Vegetables',
+            quantity: row.quantity ?? '',
+            unit: row.unit || 'kg',
+            cost_per_unit: row.cost_per_unit ?? '',
+            market_rate: row.market_rate ?? '',
+            notes: row.notes || '',
+            issued_to_kitchen_qty: row.issued_to_kitchen_qty ?? '',
+        });
+        setView('store-form');
+    };
+    const startEditKitchen = (row) => {
+        setEditingKitchenId(row.id);
+        setKitchenErrors({});
+        setKitchenForm({
+            date: row.date || '',
+            meal_type: row.meal_type || 'breakfast',
+            submitted_by: row.submitted_by || user?.name || '',
+            expected_guests: row.expected_guests ?? '',
+            temperature_check_passed: Boolean(row.temperature_check_passed),
+            dishes_ran_out: row.dishes_ran_out || '',
+            dishes_leftover: row.dishes_leftover || '',
+            portion_observation: row.portion_observation || 'Reasonable',
+            actual_guests: row.actual_guests ?? '',
+            biggest_waste_dish: row.biggest_waste_dish || '',
+            staff_meals_count: row.staff_meals_count ?? 0,
+            staff_meals_qty: row.staff_meals_qty ?? 0,
+            quality_issues: row.quality_issues || '',
+            went_well: row.went_well || '',
+            change_tomorrow: row.change_tomorrow || '',
+        });
+        setDishRows(
+            (row.dish_waste_logs || []).length > 0
+                ? row.dish_waste_logs.map((d) => ({
+                    dish_name: d.dish_name || '',
+                    quantity_prepped_kg: d.quantity_prepped_kg ?? '',
+                    quantity_line_leftover_kg: d.quantity_line_leftover_kg ?? '',
+                    quantity_plate_waste_kg: d.quantity_plate_waste_kg ?? '',
+                    waste_reason: d.waste_reason || 'Over-prep',
+                }))
+                : initialDishRows
+        );
+        setView('kitchen-form');
+    };
 
     const submitStore = async (e) => {
         e.preventDefault();
-        await api.post('/store/purchases', normalizeStoreForm(storeForm), { headers });
-        setStatus('Store entry submitted.');
-        refresh();
+        if (isStoreSubmitting) return;
+        setIsStoreSubmitting(true);
+        setStoreErrors({});
+        setStatus('');
+        try {
+            const method = editingStoreId ? 'put' : 'post';
+            const url = editingStoreId ? `/store/purchases/${editingStoreId}` : '/store/purchases';
+            await api[method](url, normalizeStoreForm(storeForm), { headers });
+            setStatus(editingStoreId ? 'Store entry updated.' : 'Store entry submitted.');
+            showToast(editingStoreId ? 'Store entry updated successfully.' : 'Store entry submitted successfully.', 'success');
+            setStoreForm(initialStoreForm);
+            setStoreErrors({});
+            setEditingStoreId(null);
+        } catch (error) {
+            const validationErrors = extractLaravelErrors(error);
+            if (Object.keys(validationErrors).length > 0) {
+                setStoreErrors(validationErrors);
+                showToast('Please fix the highlighted Store form fields.', 'error');
+            } else {
+                setStatus('Unable to submit store entry. Please try again.');
+                showToast('Unable to submit store entry. Please try again.', 'error');
+            }
+        } finally {
+            await Promise.all([refresh(), fetchStoreList(storeListMeta.page)]);
+            setIsStoreSubmitting(false);
+        }
     };
 
     const submitKitchen = async (e) => {
@@ -140,23 +290,67 @@ export default function Dashboard() {
                     calculated_waste_cost: 0,
                 })),
             };
-            await api.post('/kitchen/submissions', payload, { headers });
-            setStatus('Kitchen entry submitted.');
-            refresh();
+            const method = editingKitchenId ? 'put' : 'post';
+            const url = editingKitchenId ? `/kitchen/submissions/${editingKitchenId}` : '/kitchen/submissions';
+            await api[method](url, payload, { headers });
+            setStatus(editingKitchenId ? 'Kitchen entry updated.' : 'Kitchen entry submitted.');
+            showToast(editingKitchenId ? 'Kitchen log updated successfully.' : 'Kitchen log submitted successfully.', 'success');
+            setKitchenForm(initialKitchenForm(user?.name || ''));
+            setDishRows(initialDishRows);
+            setKitchenErrors({});
+            setEditingKitchenId(null);
         } catch (error) {
             const validationErrors = extractLaravelErrors(error);
             if (Object.keys(validationErrors).length > 0) {
                 setKitchenErrors(validationErrors);
+                showToast('Please fix the highlighted Kitchen form fields.', 'error');
             } else {
                 setStatus('Unable to submit kitchen entry. Please try again.');
+                showToast('Unable to submit kitchen entry. Please try again.', 'error');
             }
         } finally {
+            await Promise.all([refresh(), fetchKitchenList(kitchenListMeta.page)]);
             setIsKitchenSubmitting(false);
+        }
+    };
+    const deleteStoreRow = async (id) => {
+        if (!window.confirm('Are you sure you want to delete this record?')) return;
+        setDeletingStoreId(id);
+        try {
+            await api.delete(`/store/purchases/${id}`, { headers });
+            showToast('Store record deleted successfully.', 'success');
+            setStoreListRows((rows) => rows.filter((r) => r.id !== id));
+            await fetchStoreList(storeListMeta.page);
+        } catch {
+            showToast('Unable to delete Store record.', 'error');
+        } finally {
+            setDeletingStoreId(null);
+        }
+    };
+    const deleteKitchenRow = async (id) => {
+        if (!window.confirm('Are you sure you want to delete this record?')) return;
+        setDeletingKitchenId(id);
+        try {
+            await api.delete(`/kitchen/submissions/${id}`, { headers });
+            showToast('Kitchen record deleted successfully.', 'success');
+            setKitchenListRows((rows) => rows.filter((r) => r.id !== id));
+            await fetchKitchenList(kitchenListMeta.page);
+        } catch {
+            showToast('Unable to delete Kitchen record.', 'error');
+        } finally {
+            setDeletingKitchenId(null);
         }
     };
 
     return (
         <main className="min-h-screen p-2 md:p-4">
+            <div className="fixed top-4 right-4 z-[70] space-y-2">
+                {toasts.map((toast) => (
+                    <div key={toast.id} className={`min-w-[220px] max-w-[320px] rounded-lg border px-3 py-2 text-sm shadow-lg ${toast.type === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>
+                        {toast.message}
+                    </div>
+                ))}
+            </div>
             {isMobileSidebarOpen && <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setIsMobileSidebarOpen(false)} />}
             <div className="max-w-[1500px] mx-auto grid grid-cols-1 lg:grid-cols-[210px_1fr] gap-3">
                 <aside className={`ash-panel rounded-xl p-3 h-fit z-50 fixed top-0 left-0 h-full w-[260px] overflow-y-auto transform transition-transform duration-300 ease-in-out lg:sticky lg:top-3 lg:h-fit lg:w-auto lg:overflow-visible lg:transform-none ${
@@ -180,16 +374,52 @@ export default function Dashboard() {
                     <div className="space-y-3">
                         <div>
                             <p className="text-[10px] tracking-wide uppercase text-gray-400 mb-1">Departments</p>
-                            {['Kitchen', 'Store', 'Housekeeping', 'Laundry', 'Maintenance'].map((it) => (
+                            {canKitchen && (
+                                <div className="mb-1">
+                                    <button
+                                        className={`w-full flex items-center justify-between text-left text-[13px] px-2.5 py-1.5 rounded-md border ${
+                                            ['kitchen-list', 'kitchen-form'].includes(view) ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'
+                                        }`}
+                                        onClick={() => setIsKitchenMenuOpen((open) => !open)}
+                                    >
+                                        <span>Kitchen</span>
+                                        <span className={`${['kitchen-list', 'kitchen-form'].includes(view) ? 'text-red-400' : 'text-gray-300'}`}>{isKitchenMenuOpen ? '−' : '+'}</span>
+                                    </button>
+                                    {isKitchenMenuOpen && (
+                                        <div className="ml-2 mt-1 space-y-1">
+                                            <button className={`w-full text-left text-[12px] px-2.5 py-1.5 rounded-md border ${view === 'kitchen-list' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => handleSidebarAction(() => setView('kitchen-list'))}>List</button>
+                                            <button className={`w-full text-left text-[12px] px-2.5 py-1.5 rounded-md border ${view === 'kitchen-form' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => handleSidebarAction(() => setView('kitchen-form'))}>Submit Kitchen Form</button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            {canStore && (
+                                <div className="mb-1">
+                                    <button
+                                        className={`w-full flex items-center justify-between text-left text-[13px] px-2.5 py-1.5 rounded-md border ${
+                                            ['store-list', 'store-form'].includes(view) ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'
+                                        }`}
+                                        onClick={() => setIsStoreMenuOpen((open) => !open)}
+                                    >
+                                        <span>Store</span>
+                                        <span className={`${['store-list', 'store-form'].includes(view) ? 'text-red-400' : 'text-gray-300'}`}>{isStoreMenuOpen ? '−' : '+'}</span>
+                                    </button>
+                                    {isStoreMenuOpen && (
+                                        <div className="ml-2 mt-1 space-y-1">
+                                            <button className={`w-full text-left text-[12px] px-2.5 py-1.5 rounded-md border ${view === 'store-list' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => handleSidebarAction(() => setView('store-list'))}>List</button>
+                                            <button className={`w-full text-left text-[12px] px-2.5 py-1.5 rounded-md border ${view === 'store-form' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => handleSidebarAction(() => setView('store-form'))}>Submit Store Form</button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            {['Housekeeping', 'Laundry', 'Maintenance'].map((it) => (
                                 <button
                                     key={it}
-                                    className={`w-full flex items-center justify-between text-left text-[13px] px-2.5 py-1.5 rounded-md border ${
-                                        activeDepartment === it ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'
-                                    }`}
+                                    className="w-full flex items-center justify-between text-left text-[13px] px-2.5 py-1.5 rounded-md border border-transparent hover:bg-orange-50"
                                     onClick={() => setIsMobileSidebarOpen(false)}
                                 >
                                     <span>{it}</span>
-                                    <span className={`${activeDepartment === it ? 'text-red-400' : 'text-gray-300'}`}>•</span>
+                                    <span className="text-gray-300">•</span>
                                 </button>
                             ))}
                         </div>
@@ -210,8 +440,6 @@ export default function Dashboard() {
                         <div>
                             <p className="text-[10px] tracking-wide uppercase text-gray-400 mb-1">System</p>
                             <button className={`w-full text-left text-[13px] px-2.5 py-1.5 rounded-md border ${view === 'dashboard' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => handleSidebarAction(() => setView('dashboard'))}>Dashboard</button>
-                            {canStore && <button className={`w-full text-left text-[13px] px-2.5 py-1.5 rounded-md border ${view === 'store-form' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => handleSidebarAction(() => setView('store-form'))}>Submit Store Form</button>}
-                            {canKitchen && <button className={`w-full text-left text-[13px] px-2.5 py-1.5 rounded-md border ${view === 'kitchen-form' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => handleSidebarAction(() => setView('kitchen-form'))}>Submit Kitchen Form</button>}
                             <button className="w-full text-left text-[13px] px-2.5 py-1.5 rounded-md border border-transparent hover:bg-orange-50" onClick={() => handleSidebarAction(logout)}>Logout</button>
                         </div>
                     </div>
@@ -231,12 +459,14 @@ export default function Dashboard() {
                             <h1 className="text-3xl font-semibold tracking-tight">Kitchen Dashboard</h1>
                             <p className="text-xs text-gray-500">{new Date().toDateString()} · Manali · {user?.role}</p>
                         </div>
-                        <div className="flex gap-2">
-                            {['today', 'week', 'month', '6m', 'year'].map((p) => (
-                                <button key={p} onClick={() => setPeriod(p)} className={`px-2.5 py-1 text-[11px] rounded-md border ${period === p ? 'bg-black text-white' : 'bg-white'}`}>{p}</button>
-                            ))}
-                            <button className="px-2.5 py-1 text-[11px] rounded-md border bg-white disabled:opacity-60" disabled={isRefreshing} onClick={refresh}>{isRefreshing ? 'Refreshing...' : 'Refresh'}</button>
-                        </div>
+                        {showPeriodFilters && (
+                            <div className="flex gap-2">
+                                {['today', 'week', 'month', '6m', 'year'].map((p) => (
+                                    <button key={p} onClick={() => setPeriod(p)} className={`px-2.5 py-1 text-[11px] rounded-md border ${period === p ? 'bg-black text-white' : 'bg-white'}`}>{p}</button>
+                                ))}
+                                <button className="px-2.5 py-1 text-[11px] rounded-md border bg-white disabled:opacity-60" disabled={isRefreshing} onClick={refresh}>{isRefreshing ? 'Refreshing...' : 'Refresh'}</button>
+                            </div>
+                        )}
                     </div>
                     {lastUpdated && <p className="text-[11px] text-gray-500 px-1">Last updated: {lastUpdated}</p>}
 
@@ -315,7 +545,22 @@ export default function Dashboard() {
                         </>
                     )}
 
-                    {view === 'store-form' && canStore && <StoreForm storeForm={storeForm} setStoreForm={setStoreForm} submitStore={submitStore} />}
+                    {view === 'store-form' && canStore && (
+                        <StoreForm
+                            storeForm={storeForm}
+                            setStoreForm={setStoreForm}
+                            submitStore={submitStore}
+                            storeErrors={storeErrors}
+                            setStoreErrors={setStoreErrors}
+                            isStoreSubmitting={isStoreSubmitting}
+                            editingStoreId={editingStoreId}
+                            onCancelEdit={() => {
+                                setEditingStoreId(null);
+                                setStoreForm(initialStoreForm);
+                                setStoreErrors({});
+                            }}
+                        />
+                    )}
                     {view === 'kitchen-form' && canKitchen && (
                         <KitchenForm
                             kitchenForm={kitchenForm}
@@ -326,6 +571,47 @@ export default function Dashboard() {
                             kitchenErrors={kitchenErrors}
                             setKitchenErrors={setKitchenErrors}
                             isKitchenSubmitting={isKitchenSubmitting}
+                            editingKitchenId={editingKitchenId}
+                            onCancelEdit={() => {
+                                setEditingKitchenId(null);
+                                setKitchenForm(initialKitchenForm(user?.name || ''));
+                                setDishRows(initialDishRows);
+                                setKitchenErrors({});
+                            }}
+                        />
+                    )}
+                    {view === 'kitchen-list' && canKitchen && (
+                        <KitchenList
+                            rows={kitchenListRows}
+                            loading={isKitchenListLoading}
+                            search={kitchenSearch}
+                            onSearch={setKitchenSearch}
+                            sortBy={kitchenSortBy}
+                            setSortBy={setKitchenSortBy}
+                            sortDir={kitchenSortDir}
+                            setSortDir={setKitchenSortDir}
+                            meta={kitchenListMeta}
+                            onPageChange={fetchKitchenList}
+                            onEdit={startEditKitchen}
+                            onDelete={deleteKitchenRow}
+                            deletingKitchenId={deletingKitchenId}
+                        />
+                    )}
+                    {view === 'store-list' && canStore && (
+                        <StoreList
+                            rows={storeListRows}
+                            loading={isStoreListLoading}
+                            search={storeSearch}
+                            onSearch={setStoreSearch}
+                            sortBy={storeSortBy}
+                            setSortBy={setStoreSortBy}
+                            sortDir={storeSortDir}
+                            setSortDir={setStoreSortDir}
+                            meta={storeListMeta}
+                            onPageChange={fetchStoreList}
+                            onEdit={startEditStore}
+                            onDelete={deleteStoreRow}
+                            deletingStoreId={deletingStoreId}
                         />
                     )}
                     {view === 'report-daily' && (
@@ -440,28 +726,53 @@ function Chart({ title, data, dataKey }) {
     );
 }
 
-function StoreForm({ storeForm, setStoreForm, submitStore }) {
+function StoreForm({ storeForm, setStoreForm, submitStore, storeErrors, setStoreErrors, isStoreSubmitting, editingStoreId, onCancelEdit }) {
+    const updateStoreField = (field, value) => {
+        setStoreForm((s) => ({ ...s, [field]: value }));
+        if (storeErrors[field]) {
+            setStoreErrors((prev) => {
+                const next = { ...prev };
+                delete next[field];
+                return next;
+            });
+        }
+    };
+
     return (
         <form onSubmit={submitStore} className="ash-panel rounded-xl p-4 space-y-3">
-            <h3 className="font-semibold">Store / Procurement Form</h3>
+            <h3 className="font-semibold">{editingStoreId ? 'Edit Store / Procurement Form' : 'Store / Procurement Form'}</h3>
+            {Object.keys(storeErrors).length > 0 && (
+                <div className="border border-red-200 bg-red-50 text-red-700 rounded-lg px-3 py-2 text-sm">
+                    Please fix the highlighted fields and try submitting again.
+                </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <Input label="Date of purchase" type="date" value={storeForm.date} onChange={(v) => setStoreForm((s) => ({ ...s, date: v }))} required />
-                <Input label="Vendor name" value={storeForm.vendor_name} onChange={(v) => setStoreForm((s) => ({ ...s, vendor_name: v }))} required />
-                <Input label="Item name" value={storeForm.item_name} onChange={(v) => setStoreForm((s) => ({ ...s, item_name: v }))} required />
-                <Select label="Item category" value={storeForm.item_category} onChange={(v) => setStoreForm((s) => ({ ...s, item_category: v }))} options={['Vegetables', 'Meat', 'Dairy', 'Pantry', 'Beverages']} />
-                <Input label="Quantity received" type="number" value={storeForm.quantity} onChange={(v) => setStoreForm((s) => ({ ...s, quantity: v }))} required />
-                <Select label="Unit" value={storeForm.unit} onChange={(v) => setStoreForm((s) => ({ ...s, unit: v }))} options={['kg', 'litre', 'packet', 'piece']} />
-                <Input label="Cost per unit (Rs)" type="number" value={storeForm.cost_per_unit} onChange={(v) => setStoreForm((s) => ({ ...s, cost_per_unit: v }))} required />
-                <Input label="Market rate (Rs)" type="number" value={storeForm.market_rate} onChange={(v) => setStoreForm((s) => ({ ...s, market_rate: v }))} />
-                <Input label="Issued to kitchen (qty)" type="number" value={storeForm.issued_to_kitchen_qty} onChange={(v) => setStoreForm((s) => ({ ...s, issued_to_kitchen_qty: v }))} />
+                <Input label="Date of purchase" type="date" value={storeForm.date} onChange={(v) => updateStoreField('date', v)} required error={storeErrors.date} />
+                <Input label="Vendor name" value={storeForm.vendor_name} onChange={(v) => updateStoreField('vendor_name', v)} required error={storeErrors.vendor_name} />
+                <Input label="Item name" value={storeForm.item_name} onChange={(v) => updateStoreField('item_name', v)} required error={storeErrors.item_name} />
+                <Select label="Item category" value={storeForm.item_category} onChange={(v) => updateStoreField('item_category', v)} options={['Vegetables', 'Meat', 'Dairy', 'Pantry', 'Beverages']} error={storeErrors.item_category} />
+                <Input label="Quantity received" type="number" value={storeForm.quantity} onChange={(v) => updateStoreField('quantity', v)} required error={storeErrors.quantity} />
+                <Select label="Unit" value={storeForm.unit} onChange={(v) => updateStoreField('unit', v)} options={['kg', 'litre', 'packet', 'piece']} error={storeErrors.unit} />
+                <Input label="Cost per unit (Rs)" type="number" value={storeForm.cost_per_unit} onChange={(v) => updateStoreField('cost_per_unit', v)} required error={storeErrors.cost_per_unit} />
+                <Input label="Market rate (Rs)" type="number" value={storeForm.market_rate} onChange={(v) => updateStoreField('market_rate', v)} error={storeErrors.market_rate} />
+                <Input label="Issued to kitchen (qty)" type="number" value={storeForm.issued_to_kitchen_qty} onChange={(v) => updateStoreField('issued_to_kitchen_qty', v)} error={storeErrors.issued_to_kitchen_qty} />
             </div>
-            <TextArea label="Notes" value={storeForm.notes} onChange={(v) => setStoreForm((s) => ({ ...s, notes: v }))} />
-            <button className="ash-button px-4 py-2 rounded-lg">Submit Store Entry</button>
+            <TextArea label="Notes" value={storeForm.notes} onChange={(v) => updateStoreField('notes', v)} error={storeErrors.notes} />
+            <div className="flex items-center gap-2">
+                <button type="submit" disabled={isStoreSubmitting} className="ash-button px-4 py-2 rounded-lg cursor-pointer hover:cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed">
+                    {isStoreSubmitting ? 'Submitting...' : editingStoreId ? 'Update Store Entry' : 'Submit Store Entry'}
+                </button>
+                {editingStoreId && (
+                    <button type="button" className="border rounded-lg px-4 py-2 text-sm cursor-pointer hover:bg-gray-50" onClick={onCancelEdit}>
+                        Cancel
+                    </button>
+                )}
+            </div>
         </form>
     );
 }
 
-function KitchenForm({ kitchenForm, setKitchenForm, dishRows, setDishRows, submitKitchen, kitchenErrors, setKitchenErrors, isKitchenSubmitting }) {
+function KitchenForm({ kitchenForm, setKitchenForm, dishRows, setDishRows, submitKitchen, kitchenErrors, setKitchenErrors, isKitchenSubmitting, editingKitchenId, onCancelEdit }) {
     const updateKitchenField = (field, value) => {
         setKitchenForm((s) => ({ ...s, [field]: value }));
         if (kitchenErrors[field] || (field === 'expected_guests' && kitchenErrors.expected_guest_headcount)) {
@@ -487,7 +798,7 @@ function KitchenForm({ kitchenForm, setKitchenForm, dishRows, setDishRows, submi
 
     return (
         <form onSubmit={submitKitchen} className="ash-panel rounded-xl p-4 space-y-3">
-            <h3 className="font-semibold">Kitchen Daily Log Form</h3>
+            <h3 className="font-semibold">{editingKitchenId ? 'Edit Kitchen Daily Log Form' : 'Kitchen Daily Log Form'}</h3>
             {Object.keys(kitchenErrors).length > 0 && (
                 <div className="border border-red-200 bg-red-50 text-red-700 rounded-lg px-3 py-2 text-sm">
                     Please fix the highlighted fields and try submitting again.
@@ -547,10 +858,137 @@ function KitchenForm({ kitchenForm, setKitchenForm, dishRows, setDishRows, submi
                 <TextArea label="What went well today?" value={kitchenForm.went_well} onChange={(v) => updateKitchenField('went_well', v)} error={kitchenErrors.went_well} />
                 <TextArea label="Change tomorrow" value={kitchenForm.change_tomorrow} onChange={(v) => updateKitchenField('change_tomorrow', v)} error={kitchenErrors.change_tomorrow} />
             </div>
-            <button type="submit" disabled={isKitchenSubmitting} className="ash-button px-4 py-2 rounded-lg cursor-pointer hover:cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed">
-                {isKitchenSubmitting ? 'Submitting...' : 'Submit Kitchen Log'}
-            </button>
+            <div className="flex items-center gap-2">
+                <button type="submit" disabled={isKitchenSubmitting} className="ash-button px-4 py-2 rounded-lg cursor-pointer hover:cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed">
+                    {isKitchenSubmitting ? 'Submitting...' : editingKitchenId ? 'Update Kitchen Log' : 'Submit Kitchen Log'}
+                </button>
+                {editingKitchenId && (
+                    <button type="button" className="border rounded-lg px-4 py-2 text-sm cursor-pointer hover:bg-gray-50" onClick={onCancelEdit}>
+                        Cancel
+                    </button>
+                )}
+            </div>
         </form>
+    );
+}
+
+function KitchenList({ rows, loading, search, onSearch, sortBy, setSortBy, sortDir, setSortDir, meta, onPageChange, onEdit, onDelete, deletingKitchenId }) {
+    return (
+        <section className="ash-panel rounded-xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-semibold">Kitchen Submissions</h3>
+                <div className="flex gap-2">
+                    <input className="border rounded-md px-2 py-1 text-sm" placeholder="Search meal, date, submitted by" value={search} onChange={(e) => onSearch(e.target.value)} />
+                    <select className="border rounded-md px-2 py-1 text-sm" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                        <option value="date">Date</option>
+                        <option value="meal_type">Meal Type</option>
+                        <option value="submitted_by">Submitted By</option>
+                        <option value="expected_guests">Expected Guests</option>
+                        <option value="actual_guests">Actual Guests</option>
+                        <option value="created_at">Created At</option>
+                    </select>
+                    <select className="border rounded-md px-2 py-1 text-sm" value={sortDir} onChange={(e) => setSortDir(e.target.value)}>
+                        <option value="desc">Desc</option>
+                        <option value="asc">Asc</option>
+                    </select>
+                </div>
+            </div>
+            <div className="overflow-auto">
+                <table className="themed-table min-w-[980px]">
+                    <thead><tr><th>Date</th><th>Meal Type</th><th>Submitted By</th><th>Expected Guest Count</th><th>Actual Guest Count</th><th>Created At</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        {rows.length > 0 ? rows.map((row) => (
+                            <tr key={row.id}>
+                                <td>{row.date}</td>
+                                <td className="capitalize">{row.meal_type}</td>
+                                <td>{row.submitted_by}</td>
+                                <td>{row.expected_guests}</td>
+                                <td>{row.actual_guests}</td>
+                                <td>{formatDateTime(row.created_at)}</td>
+                                <td>
+                                    <div className="flex gap-2">
+                                        <button type="button" className="text-xs border rounded px-2 py-1 cursor-pointer hover:bg-gray-50" onClick={() => onEdit(row)}>Edit</button>
+                                        <button type="button" disabled={deletingKitchenId === row.id} className="text-xs border rounded px-2 py-1 cursor-pointer hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => onDelete(row.id)}>
+                                            {deletingKitchenId === row.id ? 'Deleting...' : 'Delete'}
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        )) : (
+                            <tr><td colSpan={7} className="text-center py-4 text-gray-500">{loading ? 'Loading...' : 'No kitchen records found.'}</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+            <Pagination meta={meta} onPageChange={onPageChange} />
+        </section>
+    );
+}
+
+function StoreList({ rows, loading, search, onSearch, sortBy, setSortBy, sortDir, setSortDir, meta, onPageChange, onEdit, onDelete, deletingStoreId }) {
+    return (
+        <section className="ash-panel rounded-xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-semibold">Store Submissions</h3>
+                <div className="flex gap-2">
+                    <input className="border rounded-md px-2 py-1 text-sm" placeholder="Search vendor, item, category" value={search} onChange={(e) => onSearch(e.target.value)} />
+                    <select className="border rounded-md px-2 py-1 text-sm" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                        <option value="date">Date</option>
+                        <option value="vendor_name">Vendor Name</option>
+                        <option value="item_name">Item Name</option>
+                        <option value="quantity">Quantity</option>
+                        <option value="cost_per_unit">Cost Per Unit</option>
+                        <option value="created_at">Created At</option>
+                    </select>
+                    <select className="border rounded-md px-2 py-1 text-sm" value={sortDir} onChange={(e) => setSortDir(e.target.value)}>
+                        <option value="desc">Desc</option>
+                        <option value="asc">Asc</option>
+                    </select>
+                </div>
+            </div>
+            <div className="overflow-auto">
+                <table className="themed-table min-w-[980px]">
+                    <thead><tr><th>Date</th><th>Vendor</th><th>Item</th><th>Category</th><th>Quantity</th><th>Cost/Unit</th><th>Created At</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        {rows.length > 0 ? rows.map((row) => (
+                            <tr key={row.id}>
+                                <td>{row.date}</td>
+                                <td>{row.vendor_name}</td>
+                                <td>{row.item_name}</td>
+                                <td>{row.item_category}</td>
+                                <td>{row.quantity} {row.unit}</td>
+                                <td>Rs {row.cost_per_unit}</td>
+                                <td>{formatDateTime(row.created_at)}</td>
+                                <td>
+                                    <div className="flex gap-2">
+                                        <button type="button" className="text-xs border rounded px-2 py-1 cursor-pointer hover:bg-gray-50" onClick={() => onEdit(row)}>Edit</button>
+                                        <button type="button" disabled={deletingStoreId === row.id} className="text-xs border rounded px-2 py-1 cursor-pointer hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => onDelete(row.id)}>
+                                            {deletingStoreId === row.id ? 'Deleting...' : 'Delete'}
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        )) : (
+                            <tr><td colSpan={8} className="text-center py-4 text-gray-500">{loading ? 'Loading...' : 'No store records found.'}</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+            <Pagination meta={meta} onPageChange={onPageChange} />
+        </section>
+    );
+}
+
+function Pagination({ meta, onPageChange }) {
+    return (
+        <div className="flex items-center justify-between text-sm">
+            <p className="text-gray-500">Total: {meta.total || 0}</p>
+            <div className="flex gap-2">
+                <button type="button" className="border rounded px-3 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" disabled={meta.page <= 1} onClick={() => onPageChange(meta.page - 1)}>Prev</button>
+                <span className="px-2 py-1">Page {meta.page || 1} / {meta.lastPage || 1}</span>
+                <button type="button" className="border rounded px-3 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" disabled={(meta.page || 1) >= (meta.lastPage || 1)} onClick={() => onPageChange((meta.page || 1) + 1)}>Next</button>
+            </div>
+        </div>
     );
 }
 
@@ -594,15 +1032,21 @@ function TextArea({ label, value, onChange, error }) {
 }
 
 function normalizeStoreForm(form) {
-    return { ...form, quantity: Number(form.quantity), cost_per_unit: Number(form.cost_per_unit), market_rate: form.market_rate ? Number(form.market_rate) : null, issued_to_kitchen_qty: form.issued_to_kitchen_qty ? Number(form.issued_to_kitchen_qty) : null };
+    return {
+        ...form,
+        quantity: form.quantity === '' ? null : Number(form.quantity),
+        cost_per_unit: form.cost_per_unit === '' ? null : Number(form.cost_per_unit),
+        market_rate: form.market_rate === '' ? null : Number(form.market_rate),
+        issued_to_kitchen_qty: form.issued_to_kitchen_qty === '' ? null : Number(form.issued_to_kitchen_qty),
+    };
 }
 function normalizeKitchenForm(form) {
     return {
         ...form,
         expected_guests: form.expected_guests === '' ? null : Number(form.expected_guests),
         actual_guests: form.actual_guests === '' ? null : Number(form.actual_guests),
-        staff_meals_count: form.staff_meals_count === '' ? null : Number(form.staff_meals_count),
-        staff_meals_qty: form.staff_meals_qty === '' ? null : Number(form.staff_meals_qty),
+        staff_meals_count: form.staff_meals_count === '' ? 0 : Number(form.staff_meals_count),
+        staff_meals_qty: form.staff_meals_qty === '' ? 0 : Number(form.staff_meals_qty),
     };
 }
 function updateDish(setDishRows, idx, key, value) {
@@ -616,6 +1060,12 @@ function extractLaravelErrors(error) {
         acc[field] = Array.isArray(messages) ? messages[0] : String(messages);
         return acc;
     }, {});
+}
+
+function formatDateTime(value) {
+    if (!value) return '-';
+    const dt = new Date(value);
+    return Number.isNaN(dt.getTime()) ? value : dt.toLocaleString();
 }
 
 function downloadCsv(filename, rows) {

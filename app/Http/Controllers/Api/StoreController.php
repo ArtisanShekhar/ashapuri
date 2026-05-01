@@ -9,9 +9,9 @@ use Illuminate\Support\Facades\DB;
 
 class StoreController extends Controller
 {
-    public function store(Request $request)
+    private function rules(): array
     {
-        $validated = $request->validate([
+        return [
             'date' => ['required', 'date'],
             'vendor_name' => ['required', 'string'],
             'item_name' => ['required', 'string'],
@@ -22,7 +22,12 @@ class StoreController extends Controller
             'market_rate' => ['nullable', 'numeric'],
             'notes' => ['nullable', 'string'],
             'issued_to_kitchen_qty' => ['nullable', 'numeric'],
-        ]);
+        ];
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate($this->rules());
 
         $validated['total_cost'] = $validated['quantity'] * $validated['cost_per_unit'];
         $purchase = StorePurchase::create($validated);
@@ -34,13 +39,43 @@ class StoreController extends Controller
     {
         $from = $request->query('from');
         $to = $request->query('to');
+        $search = trim((string) $request->query('q', ''));
+        $sortBy = $request->query('sort_by', 'date');
+        $sortDir = strtolower((string) $request->query('sort_dir', 'desc')) === 'asc' ? 'asc' : 'desc';
+        $perPage = min(max((int) $request->query('per_page', 10), 1), 100);
+        $allowedSort = ['date', 'vendor_name', 'item_name', 'created_at', 'quantity', 'cost_per_unit'];
+        if (!in_array($sortBy, $allowedSort, true)) {
+            $sortBy = 'date';
+        }
 
-        $query = StorePurchase::query()->orderByDesc('date');
+        $query = StorePurchase::query()->orderBy($sortBy, $sortDir);
         if ($from && $to) {
             $query->whereBetween('date', [$from, $to]);
         }
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('vendor_name', 'like', "%{$search}%")
+                    ->orWhere('item_name', 'like', "%{$search}%")
+                    ->orWhere('item_category', 'like', "%{$search}%");
+            });
+        }
 
-        return response()->json($query->paginate(50));
+        return response()->json($query->paginate($perPage));
+    }
+
+    public function update(Request $request, StorePurchase $purchase)
+    {
+        $validated = $request->validate($this->rules());
+        $validated['total_cost'] = $validated['quantity'] * $validated['cost_per_unit'];
+        $purchase->update($validated);
+
+        return response()->json($purchase->fresh());
+    }
+
+    public function destroy(StorePurchase $purchase)
+    {
+        $purchase->delete();
+        return response()->json(['message' => 'Store record deleted successfully.']);
     }
 
     public function vendorAnalysis(Request $request)

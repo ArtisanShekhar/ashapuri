@@ -12,11 +12,15 @@ Route::post('/auth/login', [AuthController::class, 'login']);
 Route::middleware('jwt.auth')->group(function (): void {
     Route::post('/store/purchases', [StoreController::class, 'store']);
     Route::get('/store/purchases', [StoreController::class, 'index']);
+    Route::put('/store/purchases/{purchase}', [StoreController::class, 'update']);
+    Route::delete('/store/purchases/{purchase}', [StoreController::class, 'destroy']);
     Route::get('/store/vendor-analysis', [StoreController::class, 'vendorAnalysis']);
     Route::get('/store/price-alerts', [StoreController::class, 'priceAlerts']);
 
     Route::post('/kitchen/submissions', [KitchenController::class, 'store']);
     Route::get('/kitchen/submissions', [KitchenController::class, 'index']);
+    Route::put('/kitchen/submissions/{submission}', [KitchenController::class, 'update']);
+    Route::delete('/kitchen/submissions/{submission}', [KitchenController::class, 'destroy']);
 
     Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
     Route::get('/dashboard/guests', [DashboardController::class, 'guests']);
