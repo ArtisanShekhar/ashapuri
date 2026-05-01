@@ -153,17 +153,50 @@ export default function Dashboard() {
                                 <div className="overflow-auto">
                                     <table className="themed-table min-w-[860px]">
                                         <thead><tr><th>Item</th><th>Used</th><th>Your Cost</th><th>Market</th><th>Overpay/Unit</th><th>Overpay/Mo</th><th>Action</th></tr></thead>
-                                        <tbody>{vendorRows.map((r, i) => <tr key={i}><td>{r.item}</td><td>{r.qty_used}</td><td>Rs {r.cost_per_unit}</td><td>Rs {r.market_rate}</td><td>Rs {r.overpay_per_unit}</td><td>Rs {r.monthly_loss}</td><td>{r.action}</td></tr>)}</tbody>
+                                        <tbody>
+                                            {vendorRows.length > 0 ? (
+                                                vendorRows.map((r, i) => (
+                                                    <tr key={i}>
+                                                        <td>{r.item}</td>
+                                                        <td>{r.qty_used}</td>
+                                                        <td>Rs {r.cost_per_unit}</td>
+                                                        <td>Rs {r.market_rate}</td>
+                                                        <td>Rs {r.overpay_per_unit}</td>
+                                                        <td>Rs {r.monthly_loss}</td>
+                                                        <td>{r.action}</td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan={7} className="text-center text-gray-500 py-5">
+                                                        No records found for vendor analysis.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
                                     </table>
                                 </div>
                             </section>
 
                             {user?.role === 'Admin/GM' && (
-                                <section className="ash-panel rounded-xl p-3 space-y-2">
-                                    <h3 className="font-semibold">Ask the AI</h3>
-                                    <textarea rows={2} className="w-full border rounded-lg p-2 text-sm" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Ask anything about kitchen, waste, vendors..." />
-                                    <button className="ash-button px-4 py-2 rounded-lg disabled:opacity-40" disabled={!canAsk} onClick={askAi}>Send</button>
-                                    <div className="text-sm bg-white rounded border p-2 whitespace-pre-wrap">{aiAnswer}</div>
+                                <section className="ash-panel rounded-xl p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="font-semibold">Ask the AI</h3>
+                                        <span className="text-[11px] text-gray-400">Kitchen Assistant</span>
+                                    </div>
+                                    <textarea
+                                        rows={3}
+                                        className="w-full border rounded-lg p-3 text-sm bg-white"
+                                        value={question}
+                                        onChange={(e) => setQuestion(e.target.value)}
+                                        placeholder="Ask anything about kitchen, waste, vendors, and costs..."
+                                    />
+                                    <div className="flex justify-end">
+                                        <button className="ash-button px-4 py-2 rounded-lg disabled:opacity-40" disabled={!canAsk} onClick={askAi}>Send</button>
+                                    </div>
+                                    <div className="bg-white rounded-lg border min-h-[70px] p-3 text-sm whitespace-pre-wrap">
+                                        {aiAnswer || 'AI answer will appear here.'}
+                                    </div>
                                 </section>
                             )}
                         </>
