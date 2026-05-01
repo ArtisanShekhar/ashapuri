@@ -249,20 +249,50 @@ export default function Dashboard() {
                     {view === 'kitchen-form' && canKitchen && <KitchenForm kitchenForm={kitchenForm} setKitchenForm={setKitchenForm} dishRows={dishRows} setDishRows={setDishRows} submitKitchen={submitKitchen} />}
                     {view === 'report-daily' && (
                         <section className="ash-panel rounded-xl p-4 space-y-2">
-                            <h3 className="font-semibold">Daily Summary Report</h3>
+                            <div className="flex items-center justify-between">
+                                <h3 className="font-semibold">Daily Summary Report</h3>
+                                <div className="flex gap-2">
+                                    <button className="px-3 py-1 text-xs border rounded-md bg-white" onClick={() => downloadCsv('daily-summary-report.csv', [
+                                        ['Metric', 'Value'],
+                                        ['Guests Served', kpi?.guests_served ?? 0],
+                                        ['Food Waste Kg', kpi?.food_waste_kg ?? 0],
+                                        ['Food Waste Percent', kpi?.food_waste_percent ?? 0],
+                                        ['Cost Per Cover', kpi?.cost_per_cover ?? 0],
+                                    ])}>Export CSV</button>
+                                    <button className="px-3 py-1 text-xs border rounded-md bg-white" onClick={() => window.print()}>Print / PDF</button>
+                                </div>
+                            </div>
                             <p className="text-sm text-gray-600">Period: {period}</p>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <Kpi title="Guests Served" value={kpi?.guests_served ?? 0} note="Selected period" />
                                 <Kpi title="Food Waste" value={`${kpi?.food_waste_kg ?? 0} kg`} note={`${kpi?.food_waste_percent ?? 0}% of prep`} />
                                 <Kpi title="Cost Per Cover" value={`Rs ${kpi?.cost_per_cover ?? 0}`} note="Average" />
                             </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                                <Chart title="Guests Trend" data={guestTrend} dataKey="guests" />
+                                <Chart title="Waste Trend" data={wasteTrend} dataKey="waste_kg" />
+                                <Chart title="Cost/Cover Trend" data={costTrend} dataKey="cost_per_cover" />
+                            </div>
                             <div className="ash-panel rounded-lg p-3 text-sm">{aiDailySummary || 'No summary found for selected period.'}</div>
                         </section>
                     )}
                     {view === 'report-vendor' && (
                         <section className="ash-panel rounded-xl p-4 space-y-2">
-                            <h3 className="font-semibold">Vendor Analysis Report</h3>
+                            <div className="flex items-center justify-between">
+                                <h3 className="font-semibold">Vendor Analysis Report</h3>
+                                <div className="flex gap-2">
+                                    <button className="px-3 py-1 text-xs border rounded-md bg-white" onClick={() => downloadCsv('vendor-analysis-report.csv', [
+                                        ['Item', 'Used', 'Your Cost', 'Market', 'Overpay/Unit', 'Overpay/Mo', 'Action'],
+                                        ...vendorRows.map((r) => [r.item, r.qty_used, r.cost_per_unit, r.market_rate, r.overpay_per_unit, r.monthly_loss, r.action]),
+                                    ])}>Export CSV</button>
+                                    <button className="px-3 py-1 text-xs border rounded-md bg-white" onClick={() => window.print()}>Print / PDF</button>
+                                </div>
+                            </div>
                             <p className="text-sm text-gray-600">Period: {period}</p>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <Chart title="Your Cost (By Item)" data={vendorRows.map((r) => ({ date: r.item, value: r.cost_per_unit }))} dataKey="value" />
+                                <Chart title="Market Rate (By Item)" data={vendorRows.map((r) => ({ date: r.item, value: r.market_rate }))} dataKey="value" />
+                            </div>
                             <div className="overflow-auto">
                                 <table className="themed-table min-w-[860px]">
                                     <thead><tr><th>Item</th><th>Used</th><th>Your Cost</th><th>Market</th><th>Overpay/Unit</th><th>Overpay/Mo</th><th>Action</th></tr></thead>
@@ -277,8 +307,21 @@ export default function Dashboard() {
                     )}
                     {view === 'report-waste' && (
                         <section className="ash-panel rounded-xl p-4 space-y-2">
-                            <h3 className="font-semibold">Waste Log Report</h3>
+                            <div className="flex items-center justify-between">
+                                <h3 className="font-semibold">Waste Log Report</h3>
+                                <div className="flex gap-2">
+                                    <button className="px-3 py-1 text-xs border rounded-md bg-white" onClick={() => downloadCsv('waste-log-report.csv', [
+                                        ['Date', 'Meal', 'Submitted By', 'Guests', 'Biggest Waste', 'Portion', 'Change Tomorrow'],
+                                        ...kitchenLogs.map((row) => [row.date, row.meal_type, row.submitted_by, row.actual_guests, row.biggest_waste_dish || '-', row.portion_observation || '-', row.change_tomorrow || '-']),
+                                    ])}>Export CSV</button>
+                                    <button className="px-3 py-1 text-xs border rounded-md bg-white" onClick={() => window.print()}>Print / PDF</button>
+                                </div>
+                            </div>
                             <p className="text-sm text-gray-600">Recent kitchen submissions</p>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <Chart title="Waste Trend (Daily Kg)" data={wasteTrend} dataKey="waste_kg" />
+                                <Chart title="Guests Trend (Daily)" data={guestTrend} dataKey="guests" />
+                            </div>
                             <div className="overflow-auto">
                                 <table className="themed-table min-w-[960px]">
                                     <thead><tr><th>Date</th><th>Meal</th><th>Submitted By</th><th>Guests</th><th>Biggest Waste</th><th>Portion</th><th>Change Tomorrow</th></tr></thead>
@@ -403,4 +446,17 @@ function normalizeKitchenForm(form) {
 }
 function updateDish(setDishRows, idx, key, value) {
     setDishRows((rows) => rows.map((r, i) => (i === idx ? { ...r, [key]: value } : r)));
+}
+
+function downloadCsv(filename, rows) {
+    const csv = rows
+        .map((row) => row.map((cell) => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(','))
+        .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
