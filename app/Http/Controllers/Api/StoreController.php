@@ -46,10 +46,7 @@ class StoreController extends Controller
     public function vendorAnalysis(Request $request)
     {
         $period = $request->query('period', 'month');
-        $from = now()->startOfMonth();
-        if ($period === 'week') {
-            $from = now()->startOfWeek();
-        }
+        [$from, $to] = $this->periodRange($period);
 
         $rows = StorePurchase::query()
             ->select(
@@ -58,7 +55,7 @@ class StoreController extends Controller
                 DB::raw('AVG(cost_per_unit) as cost_per_unit'),
                 DB::raw('AVG(COALESCE(market_rate, cost_per_unit)) as market_rate')
             )
-            ->whereDate('date', '>=', $from->toDateString())
+            ->whereBetween('date', [$from, $to])
             ->groupBy('item_name')
             ->get()
             ->map(function ($row) {
@@ -107,5 +104,23 @@ class StoreController extends Controller
             })->values();
 
         return response()->json($alerts);
+    }
+
+    private function periodRange(string $period): array
+    {
+        $to = now()->toDateString();
+        $from = now()->startOfMonth()->toDateString();
+
+        if ($period === 'today') {
+            $from = now()->toDateString();
+        } elseif ($period === 'week') {
+            $from = now()->startOfWeek()->toDateString();
+        } elseif ($period === '6m') {
+            $from = now()->subMonths(6)->startOfDay()->toDateString();
+        } elseif ($period === 'year') {
+            $from = now()->startOfYear()->toDateString();
+        }
+
+        return [$from, $to];
     }
 }

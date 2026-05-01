@@ -22,6 +22,9 @@ export default function Dashboard() {
     const [view, setView] = useState('dashboard');
     const [period, setPeriod] = useState('month');
     const [status, setStatus] = useState('');
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState('');
+    const [kitchenLogs, setKitchenLogs] = useState([]);
     const [storeForm, setStoreForm] = useState({
         date: '', vendor_name: '', item_name: '', item_category: 'Vegetables', quantity: '', unit: 'kg', cost_per_unit: '', market_rate: '', notes: '', issued_to_kitchen_qty: '',
     });
@@ -30,6 +33,7 @@ export default function Dashboard() {
         portion_observation: 'Reasonable', actual_guests: '', biggest_waste_dish: '', staff_meals_count: '', staff_meals_qty: '', quality_issues: '', went_well: '', change_tomorrow: '',
     });
     const [dishRows, setDishRows] = useState([{ dish_name: '', quantity_prepped_kg: '', quantity_line_leftover_kg: '', quantity_plate_waste_kg: '', waste_reason: 'Over-prep' }]);
+    const [activeDepartment] = useState('Kitchen');
 
     const canAsk = useMemo(() => token && question.trim().length > 0, [token, question]);
     const canStore = user?.role === 'Store' || user?.role === 'Admin/GM';
@@ -41,24 +45,33 @@ export default function Dashboard() {
 
     const headers = { Authorization: `Bearer ${token}` };
     const refresh = async () => {
+        setIsRefreshing(true);
+        setStatus('');
         try {
+            const params = { period };
             const [s, g, w, c, v, alerts] = await Promise.all([
-                api.get('/dashboard/summary', { headers }),
-                api.get('/dashboard/guests', { headers }),
-                api.get('/dashboard/waste', { headers }),
-                api.get('/dashboard/cost-per-cover', { headers }),
-                api.get('/store/vendor-analysis', { headers }),
+                api.get('/dashboard/summary', { headers, params }),
+                api.get('/dashboard/guests', { headers, params }),
+                api.get('/dashboard/waste', { headers, params }),
+                api.get('/dashboard/cost-per-cover', { headers, params }),
+                api.get('/store/vendor-analysis', { headers, params }),
                 api.get('/store/price-alerts', { headers }),
             ]);
             setKpi(s.data); setGuestTrend(g.data); setWasteTrend(w.data); setCostTrend(c.data); setVendorRows(v.data || []); setPriceAlerts(alerts.data || []);
+            const kitchen = await api.get('/kitchen/submissions', { headers });
+            setKitchenLogs(kitchen.data?.data || []);
             const summary = await api.post('/ai/daily-summary', {}, { headers });
             setAiDailySummary(summary.data.response || '');
+            setLastUpdated(new Date().toLocaleString());
         } catch {
             setStatus('Unable to load dashboard data.');
+        } finally {
+            setIsRefreshing(false);
         }
     };
 
     useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [token]);
+    useEffect(() => { if (token) refresh(); /* eslint-disable-next-line */ }, [period]);
 
     const askAi = async () => {
         if (!canAsk) return;
@@ -100,17 +113,46 @@ export default function Dashboard() {
         <main className="min-h-screen p-2 md:p-4">
             <div className="max-w-[1500px] mx-auto grid grid-cols-1 lg:grid-cols-[210px_1fr] gap-3">
                 <aside className="ash-panel rounded-xl p-3 h-fit sticky top-3">
-                    <h2 className="text-lg font-bold text-black">Ashapuri</h2>
+                    <h2 className="text-xl font-bold text-black leading-tight">Ashapuri</h2>
                     <p className="text-[10px] tracking-wide uppercase text-gray-500 mb-4">Operations</p>
-                    <p className="text-[11px] font-semibold text-gray-500 mb-1">Departments</p>
-                    {['Kitchen', 'Store', 'Housekeeping', 'Laundry', 'Maintenance'].map((it) => (
-                        <button key={it} className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-orange-50">{it}</button>
-                    ))}
-                    <p className="text-[11px] font-semibold text-gray-500 mt-4 mb-1">System</p>
-                    <button className={`w-full text-left text-sm px-2 py-1.5 rounded ${view === 'dashboard' ? 'bg-black text-white' : 'hover:bg-orange-50'}`} onClick={() => setView('dashboard')}>Dashboard</button>
-                    {canStore && <button className={`w-full text-left text-sm px-2 py-1.5 rounded ${view === 'store-form' ? 'bg-black text-white' : 'hover:bg-orange-50'}`} onClick={() => setView('store-form')}>Submit Store Form</button>}
-                    {canKitchen && <button className={`w-full text-left text-sm px-2 py-1.5 rounded ${view === 'kitchen-form' ? 'bg-black text-white' : 'hover:bg-orange-50'}`} onClick={() => setView('kitchen-form')}>Submit Kitchen Form</button>}
-                    <button className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-orange-50" onClick={logout}>Logout</button>
+
+                    <div className="space-y-3">
+                        <div>
+                            <p className="text-[10px] tracking-wide uppercase text-gray-400 mb-1">Departments</p>
+                            {['Kitchen', 'Store', 'Housekeeping', 'Laundry', 'Maintenance'].map((it) => (
+                                <button
+                                    key={it}
+                                    className={`w-full flex items-center justify-between text-left text-[13px] px-2.5 py-1.5 rounded-md border ${
+                                        activeDepartment === it ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'
+                                    }`}
+                                >
+                                    <span>{it}</span>
+                                    <span className={`${activeDepartment === it ? 'text-red-400' : 'text-gray-300'}`}>•</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div>
+                            <p className="text-[10px] tracking-wide uppercase text-gray-400 mb-1">Reports</p>
+                            <button className={`w-full flex items-center justify-between text-left text-[13px] px-2.5 py-1.5 rounded-md border ${view === 'report-daily' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => setView('report-daily')}>
+                                <span>Daily Summary</span><span className="text-gray-300">•</span>
+                            </button>
+                            <button className={`w-full flex items-center justify-between text-left text-[13px] px-2.5 py-1.5 rounded-md border ${view === 'report-vendor' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => setView('report-vendor')}>
+                                <span>Vendor Analysis</span><span className="text-gray-300">•</span>
+                            </button>
+                            <button className={`w-full flex items-center justify-between text-left text-[13px] px-2.5 py-1.5 rounded-md border ${view === 'report-waste' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => setView('report-waste')}>
+                                <span>Waste Log</span><span className="text-gray-300">•</span>
+                            </button>
+                        </div>
+
+                        <div>
+                            <p className="text-[10px] tracking-wide uppercase text-gray-400 mb-1">System</p>
+                            <button className={`w-full text-left text-[13px] px-2.5 py-1.5 rounded-md border ${view === 'dashboard' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => setView('dashboard')}>Dashboard</button>
+                            {canStore && <button className={`w-full text-left text-[13px] px-2.5 py-1.5 rounded-md border ${view === 'store-form' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => setView('store-form')}>Submit Store Form</button>}
+                            {canKitchen && <button className={`w-full text-left text-[13px] px-2.5 py-1.5 rounded-md border ${view === 'kitchen-form' ? 'bg-black text-white border-black' : 'border-transparent hover:bg-orange-50'}`} onClick={() => setView('kitchen-form')}>Submit Kitchen Form</button>}
+                            <button className="w-full text-left text-[13px] px-2.5 py-1.5 rounded-md border border-transparent hover:bg-orange-50" onClick={logout}>Logout</button>
+                        </div>
+                    </div>
                 </aside>
 
                 <section className="space-y-2.5">
@@ -123,9 +165,10 @@ export default function Dashboard() {
                             {['today', 'week', 'month', '6m', 'year'].map((p) => (
                                 <button key={p} onClick={() => setPeriod(p)} className={`px-2.5 py-1 text-[11px] rounded-md border ${period === p ? 'bg-black text-white' : 'bg-white'}`}>{p}</button>
                             ))}
-                            <button className="px-2.5 py-1 text-[11px] rounded-md border bg-white" onClick={refresh}>Refresh</button>
+                            <button className="px-2.5 py-1 text-[11px] rounded-md border bg-white disabled:opacity-60" disabled={isRefreshing} onClick={refresh}>{isRefreshing ? 'Refreshing...' : 'Refresh'}</button>
                         </div>
                     </div>
+                    {lastUpdated && <p className="text-[11px] text-gray-500 px-1">Last updated: {lastUpdated}</p>}
 
                     {status && <div className="ash-panel rounded-lg p-2 text-sm">{status}</div>}
 
@@ -204,6 +247,50 @@ export default function Dashboard() {
 
                     {view === 'store-form' && canStore && <StoreForm storeForm={storeForm} setStoreForm={setStoreForm} submitStore={submitStore} />}
                     {view === 'kitchen-form' && canKitchen && <KitchenForm kitchenForm={kitchenForm} setKitchenForm={setKitchenForm} dishRows={dishRows} setDishRows={setDishRows} submitKitchen={submitKitchen} />}
+                    {view === 'report-daily' && (
+                        <section className="ash-panel rounded-xl p-4 space-y-2">
+                            <h3 className="font-semibold">Daily Summary Report</h3>
+                            <p className="text-sm text-gray-600">Period: {period}</p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <Kpi title="Guests Served" value={kpi?.guests_served ?? 0} note="Selected period" />
+                                <Kpi title="Food Waste" value={`${kpi?.food_waste_kg ?? 0} kg`} note={`${kpi?.food_waste_percent ?? 0}% of prep`} />
+                                <Kpi title="Cost Per Cover" value={`Rs ${kpi?.cost_per_cover ?? 0}`} note="Average" />
+                            </div>
+                            <div className="ash-panel rounded-lg p-3 text-sm">{aiDailySummary || 'No summary found for selected period.'}</div>
+                        </section>
+                    )}
+                    {view === 'report-vendor' && (
+                        <section className="ash-panel rounded-xl p-4 space-y-2">
+                            <h3 className="font-semibold">Vendor Analysis Report</h3>
+                            <p className="text-sm text-gray-600">Period: {period}</p>
+                            <div className="overflow-auto">
+                                <table className="themed-table min-w-[860px]">
+                                    <thead><tr><th>Item</th><th>Used</th><th>Your Cost</th><th>Market</th><th>Overpay/Unit</th><th>Overpay/Mo</th><th>Action</th></tr></thead>
+                                    <tbody>
+                                        {vendorRows.length > 0 ? vendorRows.map((r, i) => (
+                                            <tr key={i}><td>{r.item}</td><td>{r.qty_used}</td><td>Rs {r.cost_per_unit}</td><td>Rs {r.market_rate}</td><td>Rs {r.overpay_per_unit}</td><td>Rs {r.monthly_loss}</td><td>{r.action}</td></tr>
+                                        )) : <tr><td colSpan={7} className="text-center py-4 text-gray-500">No records found.</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    )}
+                    {view === 'report-waste' && (
+                        <section className="ash-panel rounded-xl p-4 space-y-2">
+                            <h3 className="font-semibold">Waste Log Report</h3>
+                            <p className="text-sm text-gray-600">Recent kitchen submissions</p>
+                            <div className="overflow-auto">
+                                <table className="themed-table min-w-[960px]">
+                                    <thead><tr><th>Date</th><th>Meal</th><th>Submitted By</th><th>Guests</th><th>Biggest Waste</th><th>Portion</th><th>Change Tomorrow</th></tr></thead>
+                                    <tbody>
+                                        {kitchenLogs.length > 0 ? kitchenLogs.map((row) => (
+                                            <tr key={row.id}><td>{row.date}</td><td>{row.meal_type}</td><td>{row.submitted_by}</td><td>{row.actual_guests}</td><td>{row.biggest_waste_dish || '-'}</td><td>{row.portion_observation || '-'}</td><td>{row.change_tomorrow || '-'}</td></tr>
+                                        )) : <tr><td colSpan={7} className="text-center py-4 text-gray-500">No waste logs found.</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    )}
                 </section>
             </div>
         </main>
