@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+@source '../**/*.jsx';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+:root {
+    --ash-bg: #f7f6f3;
+    --ash-surface: #ffffff;
+    --ash-border: #ebe7df;
+    --ash-primary: #b84a17;
+    --ash-primary-dark: #983b12;
+    --ash-text: #171717;
+    --ash-muted: #6b7280;
+}
+
+body {
+    background: var(--ash-bg);
+    color: var(--ash-text);
+    font-size: 14px;
+}
+
+.ash-panel {
+    background: var(--ash-surface);
+    border: 1px solid var(--ash-border);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.ash-button {
+    background: linear-gradient(90deg, var(--ash-primary) 0%, #d55f27 100%);
+    color: #fff;
+}
+
+.ash-button:hover {
+    background: linear-gradient(90deg, var(--ash-primary-dark) 0%, var(--ash-primary) 100%);
+}
+
+.themed-table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.themed-table th {
+    background: var(--ash-primary);
+    color: #fff;
+    text-align: left;
+    padding: 8px 10px;
+    border: 1px solid #b84a17;
+    font-size: 12px;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+}
+
+.themed-table td {
+    padding: 8px 10px;
+    border: 1px solid #e6dfd4;
+    font-size: 12px;
+}
+
+.themed-table tbody tr:nth-child(odd) {
+    background: #fff;
+}
+
+.themed-table tbody tr:nth-child(even) {
+    background: #fcfaf7;
+}
