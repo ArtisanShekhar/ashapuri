@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar } from 'recharts';
+import Swal from 'sweetalert2';
 
 const api = axios.create({ baseURL: '/api' });
 const initialStoreForm = {
@@ -314,29 +315,75 @@ export default function Dashboard() {
         }
     };
     const deleteStoreRow = async (id) => {
-        if (!window.confirm('Are you sure you want to delete this record?')) return;
+        const result = await Swal.fire({
+            title: 'Delete Store record?',
+            text: 'This action cannot be undone.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#b84a17',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Yes, delete it',
+            cancelButtonText: 'Cancel',
+        });
+        if (!result.isConfirmed) return;
         setDeletingStoreId(id);
         try {
             await api.delete(`/store/purchases/${id}`, { headers });
             showToast('Store record deleted successfully.', 'success');
+            await Swal.fire({
+                title: 'Deleted!',
+                text: 'Store record was deleted successfully.',
+                icon: 'success',
+                timer: 1300,
+                showConfirmButton: false,
+            });
             setStoreListRows((rows) => rows.filter((r) => r.id !== id));
             await fetchStoreList(storeListMeta.page);
         } catch {
             showToast('Unable to delete Store record.', 'error');
+            await Swal.fire({
+                title: 'Delete failed',
+                text: 'Unable to delete Store record.',
+                icon: 'error',
+                confirmButtonColor: '#b84a17',
+            });
         } finally {
             setDeletingStoreId(null);
         }
     };
     const deleteKitchenRow = async (id) => {
-        if (!window.confirm('Are you sure you want to delete this record?')) return;
+        const result = await Swal.fire({
+            title: 'Delete Kitchen record?',
+            text: 'This action cannot be undone.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#b84a17',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Yes, delete it',
+            cancelButtonText: 'Cancel',
+        });
+        if (!result.isConfirmed) return;
         setDeletingKitchenId(id);
         try {
             await api.delete(`/kitchen/submissions/${id}`, { headers });
             showToast('Kitchen record deleted successfully.', 'success');
+            await Swal.fire({
+                title: 'Deleted!',
+                text: 'Kitchen record was deleted successfully.',
+                icon: 'success',
+                timer: 1300,
+                showConfirmButton: false,
+            });
             setKitchenListRows((rows) => rows.filter((r) => r.id !== id));
             await fetchKitchenList(kitchenListMeta.page);
         } catch {
             showToast('Unable to delete Kitchen record.', 'error');
+            await Swal.fire({
+                title: 'Delete failed',
+                text: 'Unable to delete Kitchen record.',
+                icon: 'error',
+                confirmButtonColor: '#b84a17',
+            });
         } finally {
             setDeletingKitchenId(null);
         }
